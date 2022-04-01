@@ -1,8 +1,8 @@
 Package: SCNA
-Title: What the Package Does (One Line, Title Case)
+Title: SCNA finds copy number alteration from methylation .idat files
 Version: 0.0.0.9000
 Authors@R: 
-    person("First", "Last", , "first.last@example.com", role = c("aut", "cre"),
+    person("Izar", "de Villasante", , "idevillasante@carrerasresearch.org", role = c("aut", "cre"),
            comment = c(ORCID = "YOUR-ORCID-ID"))
 Description: What the package does (one paragraph).
 License: `use_mit_license()`, `use_gpl3_license()` or friends to pick a
@@ -16,4 +16,5 @@ Config/testthat/edition: 3
 Imports: 
     ChAMP,
     conumee,
+    pkgdown,
     minfi
