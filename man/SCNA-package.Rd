@@ -4,12 +4,12 @@
 \name{SCNA-package}
 \alias{SCNA}
 \alias{SCNA-package}
-\title{SCNA: What the Package Does (One Line, Title Case)}
+\title{SCNA: SCNA finds copy number alteration from methylation .idat files}
 \description{
 What the package does (one paragraph).
 }
 \author{
-\strong{Maintainer}: First Last \email{first.last@example.com} (\href{https://orcid.org/YOUR-ORCID-ID}{ORCID})
+\strong{Maintainer}: Izar de Villasante \email{idevillasante@carrerasresearch.org} (\href{https://orcid.org/YOUR-ORCID-ID}{ORCID})
 
 }
 \keyword{internal}

@@ -3,3 +3,9 @@
 ^README\.Rmd$
 ^\.github$
 ^Data$
+^LICENSE\.md$
+^LICENSE$
+^Manual.Rmd$
+^bin$
+^docs$
+^data-raw$

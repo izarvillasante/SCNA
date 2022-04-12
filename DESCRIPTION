@@ -2,11 +2,10 @@ Package: SCNA
 Title: SCNA finds copy number alteration from methylation .idat files
 Version: 0.0.0.9000
 Authors@R: 
-    person("Izar", "de Villasante", , "idevillasante@carrerasresearch.org", role = c("aut", "cre"),
-           comment = c(ORCID = "YOUR-ORCID-ID"))
+    person("Izar", "de Villasante", "Llaquet", "idevillasante@carrerasresearch.org", role = c("aut", "cre"),
+           comment = c(ORCID = "https://orcid.org/0000-0001-7325-0631 "))
 Description: What the package does (one paragraph).
-License: `use_mit_license()`, `use_gpl3_license()` or friends to pick a
-    license
+License: GPL (>= 3)
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.1.2
@@ -17,4 +16,15 @@ Imports:
     ChAMP,
     conumee,
     pkgdown,
-    minfi
+    minfi,
+    utils,
+    fst,
+    fs,
+    parallel,
+    doParallel,
+    foreach,
+    itertools,
+    BiocGenerics
+Depends: 
+    R (>= 2.10)
+LazyData: true
