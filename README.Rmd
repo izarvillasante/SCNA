@@ -53,3 +53,1004 @@ plot(pressure)
 ```
 
 In that case, don't forget to commit and push the resulting figure files, so they display on GitHub and CRAN.
+
+
+# Raw data:
+
+## Description:
+
+This study is focused on the detection of Copy number (cn) alterations using methylation array beadchip data. This is specially relevant for choosing an appropiate treatment in Cancer of unknow Prior (CUPs) were there is, a priori, limited knowledge of the cancer mechanistics. For more detailed information refer to the manuscript of the paper. 
+
+The following 18 cancers types were selected in our paper in order to have a representative selection of most cancers. 
+
+```{r}
+#cancers used in paper:
+cancer_types<- c("BRCA", "BLCA", "CESC", "HNSC", "LUSC", "PRAD", "STAD", "UCEC", "KIRC", "LGG",  "LIHC", "LUAD", "PCPG", "GBM",  "PAAD", "SARC", "KICH", "SKCM")
+
+```
+
+
+## Snp Data:
+
+We have downloaded copy number alteration calls calculated on a previous study with ASCAT from SNP data. 
+github link to those files: [https://github.com/riazn/biallelic_hr/blob/master/Supplementary_Files/CopyNumberData.tgz]
+
+Files were downloaded and saved to `"raw/CN_calls"`. 
+
+```{r}
+raw.folder<-normalizePath("raw/CN_calls/")
+```
+
+From the 25 cancer types present on this study only the previously described 18 are chosen. 
+
+
+### Retrive TCGA code:
+
+In order to download Methylation arrays from TCGA the TCGA ID is retrived: 
+ 
+```{r}
+library(data.table)
+setDTthreads(0L)
+
+DTlist <- lapply(list.files(raw.folder,full.names = T), 
+    function(x) {
+      # Only want cancers present in paper defined above:
+      can<-strsplit(x,"_")[[1]][3]
+      if ( can %in% cancer_types){
+          CNfile=fread(x)
+          names(CNfile)[1]<-"barcodes"
+          CNfile$Project =  paste("TCGA",can,sep = "-")
+          CNfile$ASCAT.path = x 
+          start <- c("Project","barcodes","ASCAT.path")
+          setcolorder(
+            x = CNfile, 
+            neworder = c(start,names(CNfile)[!(names(CNfile) %in% start)])
+            )
+          return(CNfile)
+      }
+    }
+)
+# Transform list of data.tables into a single DT:
+all_CN_ASCAT <- data.table::rbindlist(DTlist)
+all_CN_files <- all_CN_ASCAT[,1:2]
+#all_CN_files<-do.call("rbind",DTlist)
+
+```
+
+## Genes list:
+
+From all the genes in this study a refined list of candidate genes has been manually selected as described in the paper:
+
+```{r}
+library(readr)
+library(dplyr)
+
+file="Data/CancerGenes.csv"
+bed <- read.csv(file, stringsAsFactors = F)
+bed <- bed[!bed$chr%in%c("chrX","chrY"),]
+bed <- bed[!duplicated(bed$name),]
+ 
+g<-all_CN_ASCAT %>% select(any_of(bed$name))
+setDT(g)
+genes<-cbind(all_CN_files,g)
+setDT(genes)
+ncol(g)
+CancerGenes<-bed[bed$name %in% colnames(genes),]
+writexl::write_xlsx(CancerGenes,"Supplementary_table_S3.xlsx")
+```
+
+## TCGA
+
+```{r}
+TCGA_Project =  paste("TCGA",cancer_types,sep = "-")
+```
+
+### Primary Tumor:
+
+```{r, eval=FALSE}
+# Query for Normal Tissues:
+
+library(TCGAbiolinks)
+cl <- makeCluster(detectCores())
+registerDoParallel(cl,12)
+
+
+qfiles_all <- NULL
+
+a<-foreach(can=TCGA_Project,
+           .combine="rbind",
+           .errorhandling = "pass",
+           .packages =c("TCGAbiolinks")
+
+           ) %dopar% {
+
+
+query <- tryCatch(GDCquery(project = can,
+                                        data.category = "Raw microarray data",
+                                        data.type = "Raw intensities",
+                                        experimental.strategy = "Methylation array",
+                                        legacy = TRUE,
+                                        file.type = ".idat",
+                                        platform = "Illumina Human Methylation 450",
+                                        barcode = all_CN_files[Project==can, barcodes],
+                                        sample.type = "Primary Tumor"),
+                               error = function(e) query=NULL
+             )
+
+   if(!is.null(query)){
+    # Get results:
+    qfiles <- getResults(query,cols=c("cases","file_name"))
+    # Add cancer type:
+    qfiles$project <- can
+    # DOWNLOAD FOLDER:
+    cdir <- normalizePath(paste(getwd(),params$TCGA_folder,can,sep="/"))
+    if ( ! file.exists(cdir) ) {
+      dir.create(cdir);
+    }
+    tryCatch(GDCdownload(query, method = "api", files.per.chunk = 20,directory = cdir),
+             error = function(e) print("no files from api; method=client fails"))
+    flist<-list.files(cdir,recursive = T)
+    filepaths<-flist[basename(flist[endsWith(x = flist,suffix = ".idat")]) %in% qfiles$file_name]
+    setDT(qfiles)
+    setkey(qfiles,"file_name")
+    # Add the variable old path with the current paths of files:
+    qfiles[basename(flist),oldpath:=paste(cdir,flist,sep=.Platform$file.sep)]
+    # New path to make it more comprehensible:
+    qfiles[,newpath:=paste(cdir,cases,file_name,sep=.Platform$file.sep)]
+    
+    qfiles$barcodes<-substr(qfiles$cases,1,12)
+    # Check download of those samples were cn ASCAT calls are available.
+    #table(all_CN_files[all_CN_files$Project == can,barcodes] %in% qfiles$barcodes)
+    # Generate link: 
+    apply(qfiles,1,function(x) R.utils::createLink(link=x[5], target=x[4]))
+    qfiles_all[[can]]<-qfiles
+   }
+}
+ss_query<-do.call("rbind",qfiles_all)
+
+
+```
+
+### Sample Sheet:
+
+```{r}
+
+setkey(genes,"barcodes")
+ss<-merge(ss_query,genes)
+ascat_genes<-genes[ss_query$barcodes,.SD,.SDcols=names(g)]
+samps<-data.table(
+  Sample_Name=ss$cases,
+  filenames=ss$newpath,
+  Cancer=substr(can,6,9),
+  Purity_Impute_RFPurity.Absolute.=NA,
+  HomDel= apply(ascat_genes,1,function(x) paste(names(ascat_genes)[x == 0],collapse = ";")),
+  HetLoss= apply(ascat_genes,1,function(x) paste(names(ascat_genes)[x == 1],collapse = ";")),
+  Diploid= apply(ascat_genes,1,function(x) paste(names(ascat_genes)[x == 2],collapse = ";")),
+  Gains= apply(ascat_genes,1,function(x) paste(names(ascat_genes)[x %in% 3:4],collapse = ";")),
+  Amp= apply(ascat_genes,1,function(x) paste(names(ascat_genes)[x %in% 5:10],collapse = ";")),
+  Amp10 = apply(ascat_genes,1,function(x) paste(names(ascat_genes)[x > 10],collapse = ";")),
+  Sample_Plate =NA,
+  Sample_Group ="Normal",
+  Pool_ID=NA,
+  Project=NA,
+  Sample_Well =NA
+  
+  )
+  
+saveRDS(samps,"all_samples.rds")
+              
+```
+
+
+### Normal Samples:
+
+```{r TCGA normal, eval=F}
+# Query for Normal Tissues:
+
+library(TCGAbiolinks)
+cl <- makeCluster(detectCores())
+registerDoParallel(cl,12)
+
+
+qfiles_all <- NULL
+
+a<-foreach(can=TCGA_Project,
+           .combine="rbind",
+           .errorhandling = "pass",
+           .packages =c("TCGAbiolinks")
+
+           ) %dopar% {
+
+
+query <- tryCatch(GDCquery(project = can,
+                                        data.category = "Raw microarray data",
+                                        data.type = "Raw intensities",
+                                        experimental.strategy = "Methylation array",
+                                        legacy = TRUE,
+                                        file.type = ".idat",
+                                        platform = "Illumina Human Methylation 450",
+                                        sample.type = "Solid Tissue Normal"),
+                               error = function(e) query=NULL
+             )
+
+   if(!is.null(query)){
+    # Get results:
+    qfiles <- getResults(query,cols=c("cases","file_name"))
+    # Add cancer type:
+    qfiles$project <- can
+    # DOWNLOAD FOLDER:
+    cdir <- normalizePath(paste(getwd(),params$TCGA_folder,can,sep="/"))
+    if ( ! file.exists(cdir) ) {
+      dir.create(cdir);
+    }
+    tryCatch(GDCdownload(query, method = "api", files.per.chunk = 20,directory = cdir),
+             error = function(e) print("no files from api; method=client fails"))
+    flist<-list.files(cdir,recursive = T)
+    filepaths<-flist[basename(flist[endsWith(x = flist,suffix = ".idat")]) %in% qfiles$file_name]
+    setDT(qfiles)
+    setkey(qfiles,"file_name")
+    # Add the variable old path with the current paths of files:
+    qfiles[basename(flist),oldpath:=paste(cdir,flist,sep=.Platform$file.sep)]
+    # New path to make it more comprehensible:
+    qfiles[,newpath:=paste(cdir,cases,file_name,sep=.Platform$file.sep)]
+    
+    qfiles$barcodes<-substr(qfiles$cases,1,12)
+
+    # Generate link: 
+    apply(qfiles,1,function(x) R.utils::createLink(link=x[5], target=x[4]))
+    
+    #Limit to 5 samples per cancer type:
+    nfiles<-ifelse(nrow(qfiles)>10,10,nrow(qfiles))
+    qfiles<-qfiles[1:nfiles,]
+    qfiles_all[[can]]<-qfiles
+   }
+}
+ss_normal_query<-do.call("rbind",qfiles_all)
+```
+
+```{r}
+table(ss_normal_query$project)/2
+```
+
+
+```{r}
+ss<-merge(ss_normal_query,genes)
+ascat_genes<-genes[ss_normal_query$barcodes,.SD,.SDcols=names(g)]
+samps<-data.table(
+  Sample_Name=ss$cases,
+  filenames=ss$newpath,
+  Cancer=substr(can,6,9),
+  Purity_Impute_RFPurity.Absolute.=NA,
+  HomDel= apply(ascat_genes,1,function(x) paste(names(ascat_genes)[x == 0],collapse = ";")),
+  HetLoss= apply(ascat_genes,1,function(x) paste(names(ascat_genes)[x == 1],collapse = ";")),
+  Diploid= apply(ascat_genes,1,function(x) paste(names(ascat_genes)[x == 2],collapse = ";")),
+  Gains= apply(ascat_genes,1,function(x) paste(names(ascat_genes)[x %in% 3:4],collapse = ";")),
+  Amp= apply(ascat_genes,1,function(x) paste(names(ascat_genes)[x %in% 5:10],collapse = ";")),
+  Amp10 = apply(ascat_genes,1,function(x) paste(names(ascat_genes)[x > 10],collapse = ";")),
+  Sample_Plate =NA,
+  Sample_Group ="Normal",
+  Pool_ID=NA,
+  Project=NA,
+  Sample_Well =NA
+  
+  )
+saveRDS(samps,"normal_ss.rds")
+
+```
+
+## GEO
+
+## Whole Blood Samples:
+
+Here we download data for controls, Whole Blood, from GEO=GSE73103
+48 Females and 48 Males aged >=18.
+
+```{r, eval=F}
+#if (!requireNamespace("BiocManager", quietly = TRUE))
+#  install.packages("BiocManager")
+#BiocManager::install("GEOquery")
+#BiocManager::install("compendiumdb")
+#install.packages("data.table")
+library("data.table")
+library(GEOquery)
+library(compendiumdb)
+library(filesstrings)
+## Whole Blood:
+##https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE73103
+
+
+cdir="WholeBlood_Controls"
+if(!dir.exists(cdir))create_dir(cdir)
+cdirf=paste(cdir,"Females",sep = "/")
+if(!dir.exists(cdirf))create_dir(cdirf)
+cdirm=paste(cdir,"Males",sep = "/")
+if(!dir.exists(cdirm))create_dir(cdirm)
+
+#Fetch all 48 Females Age >= 18
+
+setwd("WholeBlood_Controls/Females/")
+count=0
+for(k in 1886364:1886803){
+  gsm <- getGEO(sprintf("GSM%i",k));
+  Sex <- gsub(" ","",strsplit(Meta(gsm)[["characteristics_ch1"]][c(1,3)][1],split=":")[[1]][2]);
+  Age <- gsub(" ","",strsplit(Meta(gsm)[["characteristics_ch1"]][c(1,3)][2],split=":")[[1]][2]);
+  if(Sex=="Female" & Age >=18){GEOquery::getGEOSuppFiles(sprintf("GSM%i",k),fetch_files = T);count=count+1;
+  print(count)}
+}
+
+#Fetch  48 Males Age >= 18
+dir_females <- gsub("./","",list.dirs()[-1])
+GSM_all <- paste0("GSM",c(1886364:1886588))
+GSM_males <- GSM_all[!GSM_all%in%dir_females]
+
+setwd("../Males/")
+getwd()
+count=0
+for(GSM in GSM_males){
+  count=count+1;
+  print(count);
+  if(count==48)break;
+  gsm <- getGEO(GSM);
+  Sex <- gsub(" ","",strsplit(Meta(gsm)[["characteristics_ch1"]][c(1,3)][1],split=":")[[1]][2]);
+  Age <- gsub(" ","",strsplit(Meta(gsm)[["characteristics_ch1"]][c(1,3)][2],split=":")[[1]][2]);
+  if(Sex=="Male" & Age >=18)GEOquery::getGEOSuppFiles(GSM,fetch_files = T)
+}
+
+# Dump all  Male/ and Female/ dirs .idat files in WholeBlood_Controls.
+setwd("../../")
+
+```
+
+
+## Cell Lines:
+
+450K data from cancer cell lines were downloaded from the Cancer Cell Line Encyclopedia (CCLE, Broad Institute) 
+database `"GSE68379"`.
+
+```{r eval=F}
+#CancerGenes<-readxl::read_xlsx("Supplementary_table_S3.xlsx")%>%as.data.frame()
+dd <- toGRanges(CancerGenes)
+ss_validation_CL<-fread("Data/Sample_Sheet_CL.txt")
+
+library(GEOquery)
+gse <- getGEO("GSE68379",GSEMatrix=TRUE)
+gse_sample_names<-str_remove_all( pData(phenoData(gse[[1]]))[,8],"-")
+idx<-gse_sample_names %in% ss_validation_CL$Sample_Name
+gsms<-colnames(gse[[1]]@assayData$exprs)[idx]
+?getGEO()
+for (GSM in gsms){
+  if (!(file.exists(paste0("raw/CL",GSM)))){
+  # gsm<-getGEO(GSM)
+    e<-simpleError(paste0(GSM,"not found"))
+  tryCatch( GEOquery::getGEOSuppFiles(GSM,fetch_files = T,baseDir = "./analysis/CL"),
+             print(GSM),
+             error=function(e)e)
+  }
+}
+
+```
+
+
+
+
+# Kcn Calibration:
+
+## Rationale:
+
+This method relies on previous knowledge of the copy number alterations of the different samples, that has been identified with ASCAT using the SNP6 arrays.  
+
+Based on ASCAT calls for each array $a$, a subset of the genes we are interested in `CancerGenes` is predicted to fall in one or other cn state from all the possible cn states. ${Amp10,Amp,Gains,Diploid,HetLoss,HomDel}$
+
+
+## Load Data:
+
+450K DNA methylation microarrays processing Illumina Infinium HumanMethylation450 (450K) BeadChip array data from TCGA was
+downloaded from Genomic Data Commons (GDC) Data Portal as described in data_download.
+
+### Training:
+
+442 samples across 18 cancer types were used as our training cohort (Supplementary Table S1)
+
+```{r}
+samps_train<-fread("Data/Table_S1.txt")
+```
+
+### Whole Blood samples:
+
+Whole Blood samples where preprocessed following the same steps as Training samples. 
+
+```{r}
+blood_mset<-readRDS("raw/blood_mset.rds")
+```
+
+### Genes list:
+
+```{r}
+CancerGenes<-readxl::read_xlsx("Supplementary_table_S3.xlsx")%>%as.data.frame()
+dd <- toGRanges(CancerGenes)
+```
+
+### Load functions:
+
+```{r functions, echo=FALSE, message=FALSE}
+source("bin/functions.R")
+```
+
+## Pre-processing:
+
+For all 450K datasets, we used the R-package minfi [21] for processing and quality control. We applied quantile normalization and a minimum detection threshold with p-value < 0.01 per probe and a maximum of 10% of failed
+probes per sample. Sex chromosomes and cross-reactive probes were excluded from the analysis, and probes that were located +/- 10 bases away from known SNPs were also filtered out. 
+
+All these steps, as well as purity calculation are performed by pre_process function. The results are saved under the folder "out/subfolder" and include a `Sample_sheet.txt` with calculated purities, the intensities file `intensities.rds`  and a GenomicRanges file `mSetSqn.rds`.
+
+```{r Pre-process}
+if(!file.exists("train_intensities.fst")){
+  intensities <- pre_process(samps_train,subf = "train")
+  intensities$probeid<-rownames(intensities)
+  fst::write_fst(intensities,"train_intensities.fst")
+}
+```
+
+## CONUMEE: log2ratios and Segments:
+
+### Load data:
+
+Conumee accepts annotation, which allows us to exclude unwanted regions and sex chromosomes:
+
+#### Whole Blood:
+
+Transform previous blood mset to intensities:
+
+```{r controls}
+controls<-CNV.load(blood_mset)
+```
+
+#### Annotation:
+
+```{r anno}
+## Upload Copy Number Polymorphism file from Broad Inst. for their exclusion
+
+file <- "Data/CNV_Germline_GSITIC2_BROAD_SNP6.merged.151117.hg19.CNV.txt"
+cnvbroad <- read.delim(file,header=T,sep="\t")
+
+## Add 'chr' tag in front of chr numbers
+
+cnvbroad <- data.frame(chr=paste("chr",cnvbroad$Chromosome,sep = ""), start=cnvbroad$Start, end=cnvbroad$End)
+
+## make Granges object:
+
+cnvbroadgr <- toGRanges(cnvbroad)
+Exclude <- cnvbroadgr
+
+#Remove chr23 (X) and chr24 (Y)
+
+Exclude <- keepSeqlevels(Exclude, paste("chr",c(1:22), sep=""), pruning.mode="coarse")
+seqnames(Exclude)
+
+## CancerGenes most amplified/most deleted in cancer autosomal chromosomes
+
+detail_region <- dd
+seqlevels(detail_region)
+anno <- CNV.create_anno(array_type = "450k",chrXY = F,
+                        exclude_regions = Exclude, detail_regions = detail_region)
+
+saveRDS(anno,"raw/anno.rds")
+```
+
+### Run CONUMEE:
+
+```{r parallel CONUMEE, eval=FALSE}
+
+library(fst)
+library(conumee)
+library(doParallel)
+library(parallel)
+# #Load annotation file
+# anno<-readRDS("anno.rds")
+# #Load controls file
+# controls<-readRDS("controls.rds")
+
+
+all_samples<-ss_train
+cl <- makeCluster(4,outfile="")
+registerDoParallel(cl)
+query_list<-foreach(k=1:NROW(all_samples),
+                    .combine="rbind",
+                    .errorhandling = "pass",
+                    .packages =c("conumee","fst","dplyr")
+) %dopar%
+  {
+
+    run_conumee(anno=anno, controls=controls, ss = all_samples,k=k,
+                fst.file = "train_intensities.fst"  )
+  }
+stopCluster(cl)
+
+```
+
+### Generate Kcn values:
+
+Once the log2r ratios from the array is calculated by CONUMEE, aswell as the Segments file, the Kcn for each cn state can be  retrived as follows:
+
+For each of cn state, we perform a linear regression:
+
+$ p * sd(log2[Ra]) ~ 0 + (log2[Rcn] – mean(log2[Ra]))$
+
+$y = 0 + bx , then:  B = y/x $
+
+$Kcn = 1/b → x/y$
+
+Therefore:
+
+$ Kcn =(log2[Rcn] – mean(log2[Ra])) / p * sd(log2[Ra])$*
+
+* mean(log2[Ra]) = the log2ratio of the whole array obtained by `conumee::CNV.fit()` 
+* log2[Rcn] = the mean log2 value for each gene of interest and cn estate.
+* p = purity calculated with Rfpurify from methylation arrays using `pre_process`
+* sd(log2[Ra]) = standard deviation of the array.
+
+
+```{r}
+make_Kc(ss=ss_train,cncols = names(ss_train)[7:11],fname="TCGAtrain")
+```
+
+```{r}
+K_list <- readRDS("TCGAtrain_Kc_list.rds")
+```
+
+
+
+
+
+
+# Validation:
+
+## Load data:
+
+151 samples across 11 cancer types as our validation cohort (Supplementary Table S2).
+
+```{r}
+library(data.table)
+ss<-ss_validation<-fread("Data/Table_S2.txt")
+```
+
+## Pre-process:
+
+Same as training:
+```{r}
+intensities <- pre_process(ss_validation,subf = "validation")
+intensities$probeid<-rownames(intensities)
+fst::write_fst(intensities,"validation_intensities.fst")
+```
+
+### GAINS & LOSS:
+
+In order to make comparisons with other thresholding techniques based on 2 categories gain/loss these have to be formulated:
+
+
+```{r}
+ss$GAINS<-apply(ss,1,function(x){
+  a<-paste(x["Gains"],x["Amp"],x["Amp10"],collapse=";",sep=";")
+  b<-unlist(strsplit(a,";"))
+  c<-intersect(b,dd$name)
+  d<-paste(c,collapse = ";")
+  return(d)
+})
+ss$LOSS<-apply(ss,1,function(x){
+  a<-paste(x["HetLoss"],x["HomDel"],collapse=";",sep=";")
+  b<-unlist(strsplit(a,";"))
+  c<-intersect(b,dd$name)
+  d<-paste(c,collapse = ";")
+  return(d)
+})
+
+```
+
+
+## CONUMEE:
+
+```{r parallel CONUMEE, eval=FALSE}
+
+library(fst)
+library(conumee)
+library(doParallel)
+library(parallel)
+# #Load annotation file
+# anno<-readRDS("anno.rds")
+# #Load controls file
+# controls<-readRDS("controls.rds")
+
+
+all_samples<-ss_validation<-ss
+cl <- makeCluster(4,outfile="")
+registerDoParallel(cl)
+query_list<-foreach(k=1:NROW(all_samples),
+                    .combine="rbind",
+                    .errorhandling = "pass",
+                    .packages =c("conumee","fst","dplyr")
+) %dopar%
+  {
+
+    run_conumee(anno=anno, controls=controls, ss = all_samples,k=k,
+                fst.file = "validation_intensities.fst"  )
+  }
+stopCluster(cl)
+
+```
+
+
+
+## Kcn:
+
+cn states must have the same name everywere, so make shure Kcn and your sample sheet calls each cn state with the same name.
+
+```{r}
+names(ss)[7:11]<-names(K_list)<-c("Amp","Amp10","Gains","HetLoss","HomDel")
+setkey(ss,"Sample_Name")
+```
+
+
+## Calculate TPR & FPR:
+
+```{r}
+library(parallel)
+library(doParallel)
+
+cl <- makeCluster(12,outfile="")
+registerDoParallel(cl)
+start_time <- Sys.time()
+ss_TP<-foreach(i=ss$Sample_Name,
+                    .combine="rbind",
+                    .errorhandling = "pass",
+                    .packages =c("dplyr","data.table","regioneR")
+) %dopar%
+  {
+    samp<-ss[i,]
+    CONUME_KC_GAINS <- conumee_kc(ID=i,
+                                  segfolder="analysis/CONUMEE/",
+                                  samp= samp,
+                                  dd,
+                                  K=K_list)
+    message("done CONUME_KC")
+    
+    for (cnstate in names(CONUME_KC_GAINS)){
+      col<-paste0("TP_CONUMEE_KC_",cnstate)
+      samp[i,(col):=CONUME_KC_GAINS[[cnstate]][[1]]$TPR]
+      col_fp<-paste0("FP_CONUMEE_KC_",cnstate)
+      samp[i,(col_fp):=CONUME_KC_GAINS[[cnstate]][[1]]$FPR]
+    }
+    
+    # Standard thresholding = 0.3:
+    CONUME_Std <-conumee_st(ID=i,segfolder="analysis/CONUMEE/",samp= samp,dd=dd,gains_col = "GAINS",losses_col = "LOSS")
+    
+    for (cnstate in names(CONUME_Std)){
+      col<-paste0("TP_CONUMEE_Std_all_",cnstate)
+      samp[i,(col):=CONUME_Std[[cnstate]][[1]]$TPR]
+      col_fp<-paste0("FP_CONUMEE_Std_all_",cnstate)
+      samp[i,(col_fp):=CONUME_Std[[cnstate]][[1]]$FPR]
+    }
+  return(samp)
+  }
+stopCluster(cl)
+
+#saveRDS(ss_TP<-"raw/validation_sample_sheet.rds")
+```
+
+## Summarize data:
+
+```{r}
+ss_plot<-dplyr::select(ss_TP,all_of(names(ss_TP)[startsWith(names(ss_TP), "TP")| startsWith(names(ss_TP), "FP")]))
+#ss_plot<-ss_plot%>%select(names(ss_plot)[!names(ss_plot)%like% "all"])
+
+pdata<-data.frame(
+  val=as.numeric(ss_plot[,lapply(.SD,mean,na.rm=T)]),
+  test=ifelse(startsWith(names(ss_plot), "TP"),"TP","FP"),
+  prog=substr(names(ss_plot),4,nchar(names(ss_plot)))
+)
+writexl::write_xlsx(pdata,"fig1C_TCGAtrain_Kc.xlsx")
+```
+
+
+
+# Benchmarck:
+
+Comparison with ChAMP and cnanalysis450k.
+
+## ChAMP:
+
+### Load data:
+
+```{r}
+# Load pre-procesed Validation datasets:
+dataset <- readRDS("analysis/ChAMP/validation/mSetSqn.rds")
+# pheno data for cases:
+pd <- colData(dataset)
+pd$pheno<-"cancer"
+colnames(dataset)<-pd$Sample_Name
+colData(dataset) <-pd
+
+# pheno data for controls:
+pd_controls<-colData(blood_mset)
+pd_controls$SampleName<-rownames(pd_controls)
+pd_controls$pheno<-"control"
+colData(blood_mset)<-pd_controls
+
+dim(dataset)
+dim(blood_mset)
+
+cgcommon<-intersect(rownames(dataset),rownames(controls@intensity))%>% intersect(.,names(anno@probes@ranges))
+dataset <- dataset[rownames(dataset) %in% cgcommon,]
+blood_mset <- blood_mset[rownames(blood_mset) %in% cgcommon,]
+
+anno@probes<-anno@probes[names(anno@probes)%in% cgcommon,]
+
+myLoad <- combineArrays(blood_mset,dataset)
+
+```
+
+### Run ChAMP:
+
+```{r}
+intensity <- CNV.load(myLoad)
+intens <- intensity@intensity
+colnames(intens)<-colnames(myLoad)
+if(file.exists("raw/cna.rds")){
+  cna<-readRDS("raw/cna.rds")
+}else{
+  cna<-champ.CNA(intensity=intens,
+               pheno=pData(myLoad)$pheno,
+               control=TRUE,
+               controlGroup="control",
+               sampleCNA=TRUE,
+               groupFreqPlots=TRUE,
+               Rplot=FALSE,
+               PDFplot=FALSE,
+               freqThreshold=0.3,
+               resultsDir="./CHAMP_CNA",
+               arraytype="450K")
+  saveRDS(cna,"raw/cna.rds")
+}
+
+
+```
+
+### figure 1B TPR&FPR:
+
+```{r}
+ss_all<-ss_TP
+setkey(ss_all,"Sample_Name")
+ss_all<-ss_all[pd$Sample_Name,]
+pd$ASCAT_GAINS<-apply(pd,1,function(x){
+  a<-paste(x["ASCAT_Gain"],x["ASCAT_AMP"],x["ASCAT_AMP10"],collapse=";",sep=";")
+  b<-unlist(strsplit(a,";"))
+  c<-intersect(b,dd$name)
+  d<-paste(c,collapse = ";")
+  return(d)
+})
+pd$ASCAT_LOSS<-apply(ss,1,function(x){
+  a<-paste(x["ASCAT_HetLoss"],x["ASCAT_Homdel"],collapse=";",sep=";")
+  b<-unlist(strsplit(a,";"))
+  c<-intersect(b,dd$name)
+  d<-paste(c,collapse = ";")
+  return(d)
+})
+Data<-list()
+for (s in 1:length(cna$sampleResult)){
+  
+  ID<-pd$Sample_Name[s]
+  seg<-cna$sampleResult[[s]]
+  Tresholds<-c(GAINS=0.3,LOSS=-0.3)
+  seg$CNCall="Diploid"
+  for(i in 1:nrow(seg)){
+    if(seg$seg.mean[i] >= Tresholds["GAINS"] )seg$CNCall[i] <- "GAINS"
+    
+    if(seg$seg.mean[i] <= Tresholds["LOSS"] )seg$CNCall[i] <- "LOSS"
+  }
+  
+  segb <- data.frame(chr=paste0("chr",seg$chrom), start=seg$loc.start, end=seg$loc.end, log2r= seg$seg.mean, CNCall=seg$CNCall)
+  seggr <- toGRanges(segb)
+  int_all<-suppressWarnings(findOverlaps(seggr,dd))
+  seggr.matched_all <- seggr[queryHits(int_all)];
+  mcols(seggr.matched_all) <- cbind.data.frame(
+    mcols(seggr.matched_all),
+    mcols(dd[dd$name%in%dd$name][subjectHits(int_all)]));
+  geneCall<-table(seggr.matched_all$CNCall)
+  for (cn in c("ASCAT_GAINS","ASCAT_LOSS")){
+    genes<-strsplit(as.character(with(pd,get(cn))),split = ";")[[1]]
+    #print(genes)
+    int <- suppressWarnings(findOverlaps(seggr,dd[dd$name%in%genes]))
+    seggr.matched <- seggr[queryHits(int)];
+    mcols(seggr.matched) <- cbind.data.frame(
+      mcols(seggr.matched),
+      mcols(dd[dd$name%in%genes][subjectHits(int)]));
+    TP=0
+    #apply(res,1,function(x),)
+    int<-seggr.matched
+    int <- seggr.matched[!duplicated(seggr.matched$name)]
+    CN<-str_split(cn,"_")[[1]][2]
+    
+    if(length(int) >=1){
+      for(r in 1:length(int)){
+        #print(i)
+        res <- int[r,]
+        
+        dat <- filter(segb, chr%in%as.character(res@seqnames@values) & start <= res@ranges@start & end >= (res@ranges@start + res@ranges@width-1) & CNCall%in%CN)
+        #print(dat)
+        if(nrow(dat)!=0)TP=TP+1;
+      }
+    }
+    
+    FP<-sum(geneCall[CN])-TP
+    Data[[cn]][[ID]]=list(TP=TP,
+                          FP=FP,
+                          NumGenes=length(unique(seggr.matched$name)),
+                          TPR=TP/length(unique(seggr.matched$name)),
+                          FPR=FP/(length(dd$name)-length(unique(seggr.matched$name)))
+    )
+    print(Data[[cn]][[ID]])
+    pd[s,paste0("TP_",cn)]<-TP/length(unique(seggr.matched$name))
+    pd[s,paste0("FP_",cn)]<-FP/(length(dd$name)-length(unique(seggr.matched$name)))
+  }
+}
+
+
+
+ss_all$TP_CHAMP<-pd$TP_ASCAT_GAINS 
+ss_all$FP_CHAMP<-pd$FP_ASCAT_GAINS
+
+# Boxplot of all the medians:
+boxplot(sapply(cna$sampleResult,function(x)median(x$seg.mean)))
+
+ss_plot<-select(ss_all,all_of(names(ss_all)[startsWith(names(ss_all), "TP")| startsWith(names(ss_all), "FP")]))
+pdata<-data.frame(
+  val=as.numeric(ss_plot[,lapply(.SD,mean,na.rm=T)]),
+  test=ifelse(startsWith(names(ss_plot), "TP"),"TP","FP"),
+  prog=substr(names(ss_plot),4,nchar(names(ss_plot)))
+)
+writexl::write_xlsx(pdata,"Data/champ_pdata.xlsx")
+```
+
+
+
+## cnAnalysis450k:
+
+### Load data:
+
+```{r}
+#Load annotation file
+anno<-readRDS("anno.rds")
+
+# Load pre-procesed Validation datasets:
+dataset <- readRDS("analysis/ChAMP/validation/mSetSqn.rds")
+
+#Controls: GenomicRatioSet object with CN Values --> pre-Processed data.
+ctrlAll<-getCN(blood_mset)
+
+```
+
+### Prepare data:
+
+```{r}
+# ctrl: Inter-array median of each cpg. (row medians) 
+ctrl <- apply(ctrlAll, 1, "median")
+#Samples:
+          #In: GenomicRatioSet object with CN values --> pre-Processed data.
+          
+samples <- normData <- getCN(dataset)
+probes<-intersect(rownames(samples),rownames(ctrlAll))
+samples<-samples[probes,]
+ctrlAll<- ctrlAll[probes,]
+genes<-dd$name
+
+```
+
+### Run cnanalysis450k:
+
+```{r}
+# Workflow for transcript mapping.
+egid <-
+  AnnotationDbi::select(org.Hs.eg.db::org.Hs.eg.db,
+                        genes,
+                        c("ENTREZID"),
+                        "SYMBOL")
+tx.extend <-
+  AnnotationDbi::select(
+    TxDb.Hsapiens.UCSC.hg19.knownGene::TxDb.Hsapiens.UCSC.hg19.knownGene,
+    egid$ENTREZID,
+    columns = "TXNAME",
+    keytype = "GENEID"
+  )
+tx<-tx.extend$TXNAME
+
+candidatesDATA <-  cnAnalysis450k::getTxValues(samples, ctrl, ctrlAll, tx, output = "diff")
+
+candidatesMATRIX <-  as.matrix(candidatesDATA$data, pval =1)
+
+dt<-data.table(candidatesMATRIX)
+dt$rn<-rownames(candidatesMATRIX)
+
+names(egid)[2]<-"GENEID"
+ann<-merge(egid,tx.extend)
+genesymbols<-ann[match(dt$rn,ann$TXNAME),"SYMBOL"]
+dt$symbol<-genesymbols
+# names(dt)<-colData(myLoad$rgSet)$Sample_Name
+
+cn450k<-dt[,lapply(.SD, function(x) mean(x)),by="symbol",.SDcols=setdiff(names(dt),"rn")]
+
+```
+
+```{r}
+# defineCutoffs <- "auto" # man, auto, skip
+LOSSEFFECT <- 0.15
+GAINEFFECT <- 0.1
+# PROXIMITY <- c(2, 1)
+# candidatesCUT <- NULL
+# candidatesFINAL <- NULL
+# 
+cols<-setdiff(names(cn450k),c("symbol","rn"))
+candidatesMATRIX<-cn450k[,..cols]%>%as.matrix()
+rownames(candidatesMATRIX)<-cn450k$symbol
+candidatesCUT <-
+  cnAnalysis450k::findCutoffs(candidatesMATRIX)
+candidatesFINAL <-
+  cnAnalysis450k::segmentData(candidatesMATRIX,
+                              candidatesCUT,
+                              effectsize = c(LOSSEFFECT, GAINEFFECT))
+# 
+# 
+saveRDS(candidatesFINAL,"validation_cn450k_final.rds")
+ss <- fread("raw/Data/Additional.File.4_TableS3.csv")
+cnaf<-candidatesFINAL
+for (i in as.numeric(colnames(cnaf))){
+  ID<-ss$Sample_Name[i]
+  gain<-paste(names(cnaf[,i])[cnaf[,i]==1],collapse = ";")
+  loss<-paste(names(cnaf[,i])[cnaf[,i]==-1],collapse = ";")
+
+  #ss[,ASCAT_GAIN:=apply(ss,1,function(x)paste(ASCAT_Gain,ASCAT_AMP,ASCAT_AMP10,collapse = ";"))]
+  ss[Sample_Name==ID,"cna450k_Gain"] <- gain
+  ss[Sample_Name==ID,"cna450k_Loss"] <- loss
+  
+}
+```
+
+### Fig 1B TPR&FPR:
+
+```{r}
+ss$GAINS<-apply(ss,1,function(x){
+  a<-paste(x["ASCAT_Gain"],x["ASCAT_AMP"],x["ASCAT_AMP10"],collapse=";",sep=";")
+  b<-unlist(strsplit(a,";"))
+  c<-intersect(b,genes)
+  d<-paste(c,collapse = ";")
+  return(d)
+})
+ss$LOSS<-apply(ss,1,function(x){
+  a<-paste(x["ASCAT_HetLoss"],x["ASCAT_Homdel"],collapse=";",sep=";")
+  b<-unlist(strsplit(a,";"))
+  c<-intersect(b,genes)
+  d<-paste(c,collapse = ";")
+  return(d)
+})
+
+ss$TP_cna450k<-apply(ss,1,function(x){
+  champ<-unlist(strsplit(x["cna450k_Gain"],";"))
+  gains<-unlist(strsplit(x["GAINS"],";"))
+  table(champ%in%gains)["TRUE"]/length(gains)
+}
+)
+
+ss$FP_cna450k<-apply(ss,1,function(x){
+  champ<-unlist(strsplit(x["cna450k_Gain"],";"))
+  gains<-unlist(strsplit(x["GAINS"],";"))
+  table(champ%in%gains)["FALSE"]/(length(genes)-length(gains))
+}
+)
+
+saveRDS(ss,"raw/validation_ss_cna450k.rds")
+
+
+```
+
+
+
+
+
