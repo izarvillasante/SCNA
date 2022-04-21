@@ -29,6 +29,7 @@
 #' intensity<-readRDS("./analysis/ChAMP/intensities.rds")
 #' intensity<-conumee::CNV.load(intensity)@intensity
 #' run_conumee(intensities=intensity)
+#'
 
 
 
