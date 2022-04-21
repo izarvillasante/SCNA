@@ -6,14 +6,14 @@
 #' @param ctrl_file CNV data object with intensities from the controls group.
 #' must be compressed as '.rds' file format, default uses 96 WB samples.
 #' Default='WB'
-#' @param out Parent working directory where you want to have your results.
+#' @param conumee.folder Parent working directory where you want to have your results.
 #' @param seg.folder  Subfolder inside results where segment files are saved.
 #' The segments are generated with CONUMEE CNV.segment(CNV.detail(CNV.bin(fit)))
 #' default = "Segments"
 #' @param log2r.folder Subfolder inside results where log2r values are saved.
-#' log2r values are the fitted log intensity value against the reference set
-#' returned by CNV.fit function from CONUMEE.
-#' default = "log2"
+#' log2r values are the log2 ratio of the intensities(_GRN + _RED channel) between the
+#' query and the reference set (control) as returned by CNV.fit function from CONUMEE.
+#' default = "log2r"
 #' @param Sample_Name Samples to be analysed. If is NULL all columns in input
 #' file will be used. Accepts numbered index and names. Default=NULL
 #' @param probeid name of column with probe ids.
@@ -33,8 +33,8 @@
 
 
 run_conumee<-function(intensities, anno_file=NULL, ctrl_file='WB', Sample_Name=NULL,
-                      seg.folder = "Segments", log2r.folder = "log2",
-                      out="analysis/CONUMEE/", probeid="probeid"){
+                      seg.folder = "Segments", log2r.folder = "log2r",
+                      conumee.folder="analysis/CONUMEE/", probeid="probeid"){
   requireNamespace("conumee")
   if(!is.null(anno_file ))anno <- readRDS(anno_file)
   message("anno")
@@ -44,7 +44,7 @@ run_conumee<-function(intensities, anno_file=NULL, ctrl_file='WB', Sample_Name=N
   if(is.null(intensities) ){
     stop("Provide conumee with either a valid path to file or a data.frame with intensities",call. = F)
   }
-  dir.create(out,recursive=TRUE,showWarnings=FALSE)
+  dir.create(conumee.folder,recursive=TRUE,showWarnings=FALSE)
   intensities<- read_intensity(infile = intensities,Sample_Name=Sample_Name,probeid=probeid)
   data.table::setkey(intensities,probeid)
   message("intensities")
@@ -73,47 +73,30 @@ run_conumee<-function(intensities, anno_file=NULL, ctrl_file='WB', Sample_Name=N
                         .inorder=F,
                         .errorhandling = "pass"
   )%dopar%{
-    Sample_Name <- names(intensities)[i]
+    ID <- names(intensities)[i]
     my.datacnv<-conumee::CNV.load(intensities[,..i])
     rownames(my.datacnv@intensity)<-idx
+    # log2ratio from intensity
     fit  <- conumee::CNV.fit(my.datacnv, control, anno)
-    #Log2 <- list(log2ratio=fit@fit$ratio, Purity=ss$Purity_Impute_RFPurify.Absolute.[ss$Sample_Name%in%Sample_Name])
-    fit2 <- conumee::CNV.segment(conumee::CNV.detail(conumee::CNV.bin(fit)))
-    write.table(conumee::CNV.write(fit2, what = "segments"),sprintf("%sSegments_%s.txt",out,Sample_Name),col.names = T, row.names = F, quote = F, sep = "\t")
-    message("Sgements file" ," saved")
     log2ratio<-as.data.frame(fit@fit$ratio)
-    names(log2ratio) <- Sample_Name
-    #log2ratio$purity <- ss[ss$Sample_Name== Sample_Name,Purity_Impute_RFPurity.Absolute.]
-
-    log2_file<-paste(out,log2r.folder,"/",Sample_Name,"_log2.txt", sep="")
-    dir.create(dirname(log2_file),recursive = TRUE,showWarnings=FALSE)
-    message(log2_file)
-    write.table(log2ratio,log2_file)
+    names(log2ratio) <- ID
+    log2file <-paste0(conumee.folder,"/",log2r.folder,"/",ID,"_log2r.txt")
+    dir.create(dirname(log2file),recursive = TRUE,showWarnings=FALSE)
+    write.table(log2ratio,log2file)
     message(log2_file ," saved")
+    # Segmentation:
+    fit2 <- conumee::CNV.segment(conumee::CNV.detail(conumee::CNV.bin(fit)))
+    segfile <- paste0(conumee.folder,"/",seg.folder,"/",ID,"_Segments.txt")
+    dir.create(dirname(segfile),recursive = TRUE,showWarnings=FALSE)
+    write.table(conumee::CNV.write(fit2, what = "segments"),file=segfile,col.names = T, row.names = F, quote = F, sep = "\t")
+    message(segfile," saved")
     return(log2ratio)
+
   }
   parallel::stopCluster(cl)
 return(res)
   }
-#
-#   # rownames(intensities)<-intensities$probeid
-#   # names(intensities)[2]<-"intensity"
-#
-#   my.datacnv<-conumee::CNV.load(input= intensities[,2])
-#   rownames(my.datacnv@intensity)<-intensities$probeid
-#   fit  <- conumee::CNV.fit(my.datacnv, control, anno)
-#   #Log2 <- list(log2ratio=fit@fit$ratio, Purity=ss$Purity_Impute_RFPurify.Absolute.[ss$Sample_Name%in%Sample_Name])
-#   fit2 <- conumee::CNV.segment(conumee::CNV.detail(conumee::CNV.bin(fit)))
-#   write.table(conumee::CNV.write(fit2, what = "segments"),sprintf("%sSegments_%s.txt",out,Sample_Name),col.names = T, row.names = F, quote = F, sep = "\t")
-#   message("Sgements file" ," saved")
-#   log2ratio<-as.data.frame(fit@fit$ratio)
-#   names(log2ratio) <- Sample_Name
-#   #log2ratio$purity <- ss[ss$Sample_Name== Sample_Name,Purity_Impute_RFPurity.Absolute.]
-#   write.table(log2ratio,log2_file)
-#   message(log2_file ," saved")
-#   return(log2ratio)
-#   #}else return(NULL)
-# }
+
 
 #' @export
 read_intensity<-function(infile,Sample_Name=NULL,probeid="probeid"){

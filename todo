@@ -1,9 +1,13 @@
 TODO
 
-Recover all sysdata.rda and make a raw-data file to generate it
+Recover all sysdata.rda and make a raw-data file to generate it DONE
 
 Make methods section for read_intensities similar to champ_load()
 
-Renamame to cnv_methyl & upload to IJC repository
+Renamame to cnv_methyl & upload to IJC repository DONE
 
-run_conumee in parallel
+run_conumee in parallel DONE
+
+Kc_make improve AllGenes set
+
+change log2R by cg terminology NOT AGREE

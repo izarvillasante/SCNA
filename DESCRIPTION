@@ -25,7 +25,12 @@ Imports:
     foreach,
     itertools,
     BiocGenerics,
-    data.table
+    data.table,
+    regioneR,
+    SummarizedExperiment,
+    IRanges,
+    S4Vectors,
+    rlang
 Depends: 
     R (>= 2.10)
 LazyData: true
