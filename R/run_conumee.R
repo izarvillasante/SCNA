@@ -83,13 +83,13 @@ run_conumee<-function(intensities, anno_file=NULL, ctrl_file='WB', Sample_Name=N
     names(log2ratio) <- ID
     log2file <-paste0(conumee.folder,"/",log2r.folder,"/",ID,"_log2r.txt")
     dir.create(dirname(log2file),recursive = TRUE,showWarnings=FALSE)
-    write.table(log2ratio,log2file)
+    utils::write.table(log2ratio,log2file)
     message(log2_file ," saved")
     # Segmentation:
     fit2 <- conumee::CNV.segment(conumee::CNV.detail(conumee::CNV.bin(fit)))
     segfile <- paste0(conumee.folder,"/",seg.folder,"/",ID,"_Segments.txt")
     dir.create(dirname(segfile),recursive = TRUE,showWarnings=FALSE)
-    write.table(conumee::CNV.write(fit2, what = "segments"),file=segfile,col.names = T, row.names = F, quote = F, sep = "\t")
+    utils::write.table(conumee::CNV.write(fit2, what = "segments"),file=segfile,col.names = T, row.names = F, quote = F, sep = "\t")
     message(segfile," saved")
     return(log2ratio)
 
@@ -98,7 +98,11 @@ run_conumee<-function(intensities, anno_file=NULL, ctrl_file='WB', Sample_Name=N
 return(res)
   }
 
-
+#' read intesity from file or object
+#' @param infile input path to file or object
+# #' @param Sample_Name the samples to use
+#' @inheritParams run_conumee
+#' @rdname run_conumee
 #' @export
 read_intensity<-function(infile,Sample_Name=NULL,probeid="probeid"){
   requireNamespace("data.table")

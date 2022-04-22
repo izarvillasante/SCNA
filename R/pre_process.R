@@ -141,7 +141,7 @@ pre_process.myLoad <-function(targets,folder,arraytype="450K", ...) {
 #'  load the idats. default is results/IDATS/.
 
 purify <- function(myLoad){
-  myLoad_impute <- ChAMP::champ.impute(beta = getBeta(myLoad),pd = colData(myLoad),method="KNN")
+  myLoad_impute <- ChAMP::champ.impute(beta = getBeta(myLoad),pd = SummarizedExperiment::colData(myLoad),method="KNN")
   saveRDS(myLoad_impute,"impute.rds",compress = F)
   message("absolute start")
   ##Apply RFPurify
@@ -176,7 +176,7 @@ queryfy<-function(myLoad){
   mSetSqn <- mSetSqn[keep,]
 
   ## If your data includes males and females, remove probes on the sex chromosomes
-  FDATA450 = minfi::getAnnotation(IlluminaHumanMethylation450kanno.ilmn12.hg19)
+  FDATA450 = minfi::getAnnotation(IlluminaHumanMethylation450kanno.ilmn12.hg19::IlluminaHumanMethylation450kanno.ilmn12.hg19)
   keep <- !(featureNames(mSetSqn) %in% FDATA450$Name[FDATA450$chr %in% c("chrX","chrY")])
   table(keep)
   mSetSqn <- mSetSqn[keep,]

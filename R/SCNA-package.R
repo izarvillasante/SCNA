@@ -14,5 +14,8 @@
 #' @importFrom data.table data.table
 #' @importFrom foreach %dopar%
 #' @importFrom S4Vectors queryHits
+#' @importFrom utils getFromNamespace
+#' @importFrom utils head
+#' @importFrom utils read.delim
 ## usethis namespace: end
 NULL

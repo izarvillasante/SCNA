@@ -4,7 +4,13 @@
 \alias{read.metharray.exp.par}
 \title{construct RGChannelSet in parallel}
 \usage{
-read.metharray.exp.par(targets, folder, verbose = TRUE, ...)
+read.metharray.exp.par(
+  targets,
+  folder,
+  verbose = TRUE,
+  arraytype = "450K",
+  ...
+)
 }
 \arguments{
 \item{targets}{data.frame representing valid targets file as is

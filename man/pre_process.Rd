@@ -19,7 +19,7 @@ pre_process(
 
 purify(myLoad)
 
-queryfy(myLoad, out = NULL)
+queryfy(myLoad)
 }
 \arguments{
 \item{targets}{A sample sheet with the required fields for ChAMP to load files.}
@@ -44,9 +44,8 @@ minfi::read.450k.sheet.}
 
 \item{arraytype}{Methylation array type}
 
-\item{myLoad}{a RGset as returned by minfi::read.metharray.exp or
-ChAMP.load(method=minfi). ChAMP will use this as basedir to load the idats.
-default is results/IDATS/.}
+\item{myLoad}{a RGset as returned by minfi::read.metharray.exp. will use this as basedir to
+load the idats. default is results/IDATS/.}
 }
 \value{
 Log2r intensities ready to be analysed with conumee.

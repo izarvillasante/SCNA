@@ -11,3 +11,7 @@ run_conumee in parallel DONE
 Kc_make improve AllGenes set
 
 change log2R by cg terminology NOT AGREE
+
+
+   '::' or ':::' imports not declared from:
+     'Biobase' 'RFpurify' 'maxprobes' 'writexl'

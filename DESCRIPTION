@@ -30,7 +30,12 @@ Imports:
     SummarizedExperiment,
     IRanges,
     S4Vectors,
-    rlang
+    rlang,
+    IlluminaHumanMethylation450kanno.ilmn12.hg19,
+    writexl,
+    RFpurify,
+    maxprobes,
+    Biobase
 Depends: 
     R (>= 2.10)
 LazyData: true

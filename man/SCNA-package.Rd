@@ -9,7 +9,7 @@
 What the package does (one paragraph).
 }
 \author{
-\strong{Maintainer}: Izar de Villasante \email{idevillasante@carrerasresearch.org} (\href{https://orcid.org/YOUR-ORCID-ID}{ORCID})
+\strong{Maintainer}: Izar Llaquet de Villasante \email{idevillasante@carrerasresearch.org} (\href{https://orcid.org/0000-0001-7325-0631 }{ORCID})
 
 }
 \keyword{internal}
