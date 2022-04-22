@@ -84,7 +84,7 @@ run_conumee<-function(intensities, anno_file=NULL, ctrl_file='WB', Sample_Name=N
     log2file <-paste0(conumee.folder,"/",log2r.folder,"/",ID,"_log2r.txt")
     dir.create(dirname(log2file),recursive = TRUE,showWarnings=FALSE)
     utils::write.table(log2ratio,log2file)
-    message(log2_file ," saved")
+    message(log2file ," saved")
     # Segmentation:
     fit2 <- conumee::CNV.segment(conumee::CNV.detail(conumee::CNV.bin(fit)))
     segfile <- paste0(conumee.folder,"/",seg.folder,"/",ID,"_Segments.txt")
@@ -142,7 +142,12 @@ tryCatch(
   }else{
     message("dataset")
       rn<-rownames(infile)
-      my.data<-data.table::as.data.table(infile)
+      t<-try(my.data<-data.table::as.data.table(infile))
+      if (inherits(t, "try-error")){
+        a<-conumee::CNV.load(infile)
+        my.data<-a@intensity
+        data.table::setDT(my.data)
+        }
       if(!probeid %in% names(my.data)) my.data[,(probeid):=rn]
       n<-colnames(my.data)
       if(is.null(Sample_Name))Sample_Name<-setdiff(n,probeid)

@@ -28,7 +28,7 @@ pre_process<-function(targets,purity=T,query=T,RGset=T,out="analysis/ChAMP/",sub
   dir.create(folder,recursive=TRUE)
   targets$Basename<-paste0(folder, basename(targets$Basename))
   myLoad<-pre_process.myLoad(targets,folder=folder, arraytype=arraytype)
-  saveRDS(myLoad,"myLoad.rds")
+  saveRDS(myLoad,paste0(out,"myLoad.rds"))
   targets<-SummarizedExperiment::colData(myLoad)
   if(purity==T){
     purity<-purify(myLoad=myLoad)
@@ -142,7 +142,7 @@ pre_process.myLoad <-function(targets,folder,arraytype="450K", ...) {
 
 purify <- function(myLoad){
   myLoad_impute <- ChAMP::champ.impute(beta = getBeta(myLoad),pd = SummarizedExperiment::colData(myLoad),method="KNN")
-  saveRDS(myLoad_impute,"impute.rds",compress = F)
+  #saveRDS(myLoad_impute,"impute.rds",compress = F)
   message("absolute start")
   ##Apply RFPurify
   #estimate <- predict_purity_betas(impute$beta,method="ESTIMATE")

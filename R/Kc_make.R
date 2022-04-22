@@ -2,15 +2,17 @@
 #' @param ss Sample sheet containing purities, cnstate and Sample_Name ids.
 #' @param fname identifier for your Kc reference data used in the output names.
 #' @param cncols column names containing reference set of genes for each cn state
+#' @param ref_genes Granges object with subset of genes to use for cnv analysis.
+#' default = "paper"
 #' @inheritParams run_conumee
 #' @export
 #' @examples
 #' data("ss")
-#' make_Kc(ss=ss,fname="test",cncols=c("Amp","Amp10","Gains"))
+#' Kc_make(ss=ss,fname="test",cncols=c("Amp","Amp10","Gains"))
 
-make_Kc<-function(ss,fname,cncols=c("Amp10","Amp","Gains","Hetloss","HomDel"),
+Kc_make<-function(ss,fname,cncols=c("Amp10","Amp","Gains","Hetloss","HomDel"),
                   conumee.folder="analysis/CONUMEE",seg.folder = "Segments",
-                  log2r.folder = "log2r"){
+                  log2r.folder = "log2r",ref_genes="paper"){
   K_list<-list()
   ss<-data.table::setDT(ss)
   data.table::setkey(ss,"Sample_Name")
@@ -44,7 +46,7 @@ make_Kc<-function(ss,fname,cncols=c("Amp10","Amp","Gains","Hetloss","HomDel"),
           segfile <- ss[ID,segfile]#paste0(conumee.folder,"/",seg.folder,"/",ID,"_Segments.txt")
           log2file <- ss[ID,log2file]#paste0(conumee.folder,"/",log2r.folder,"/",ID,"_log2r.txt")
           ss<-ss[ID,]
-          scna(cn = cnstate, ID=ID,ss=ss,ref_genes="paper",log2file = log2file,segfile = segfile)
+          scna(cn = cnstate, ID=ID,ss=ss,ref_genes=ref_genes,log2file = log2file,segfile = segfile)
         }
       saveRDS(all_scnas,scnas_file)
       all_scnas<-all_scnas[stats::complete.cases(all_scnas),]
@@ -68,13 +70,12 @@ make_Kc<-function(ss,fname,cncols=c("Amp10","Amp","Gains","Hetloss","HomDel"),
 #' Function to obtain mean intercept and variance from a
 #' reference gene set and a particular copy number state
 #' @param cn Sample sheet column name containing reference gene set for that cn.
-#' @param ref_genes Granges object with subset of genes to use for cnv analysis.
-#' default = "all"
 #' @param segfile  file containing segment data from conumee.
 #' The segments are generated with CONUMEE CNV.segment(CNV.detail(CNV.bin(fit)))
 #' @param log2file file with log2r values, which are the fitted log intensity
 #' value against the reference set returned by CNV.fit function from CONUMEE.
 #' @param ID name of sample. Must be in Sample_Name column.
+#' @inheritParams Kc_make
 #' @return dataframe with input data for linear model. Int, mean and Var .
 #' @export
 #' @examples
@@ -142,52 +143,9 @@ scna<-function(ID,log2file,segfile,ss,cn,ref_genes="all"){
 }
 
 
-get_int<-function(seg,ref_genes="all",cn_genes){
-  if(ref_genes=="all"){interest_geneset <- AllGenes}else if(ref_genes == "paper"){
-    interest_geneset <- CancerGenes}else{interest_geneset<-utils::read.table(ref_genes)}
-  interest_genes<-interest_geneset$name
-  genes <- intersect(cn_genes,interest_genes)
-  if(length(genes)<1){
-    df<-data.frame(ID=NULL,Int=NULL,X=NULL,Var=NULL)
-    warning("No genes of interest present in cnstate: ")
-    return(df)
-  }
-  segb <- data.frame(chr=seg$chrom, start=seg$loc.start, end=seg$loc.end, log2r= seg$seg.mean)
-  seggr <- regioneR::toGRanges(segb)
-  grset <- regioneR::toGRanges(interest_geneset)
-  int <- suppressWarnings(SummarizedExperiment::findOverlaps(seggr,grset[grset$name %in% genes,]))
-  seggr.matched <- seggr[S4Vectors::queryHits(int)];
-  S4Vectors::mcols(seggr.matched) <- cbind.data.frame(
-    S4Vectors::mcols(seggr.matched),
-    S4Vectors::mcols(grset[grset$name%in%genes][S4Vectors::subjectHits(int)]));
-  int <- seggr.matched
-  message("int finish")
-  return(int)
-}
-#rlang::expr(paste0(conumee.folder,'/',seg.folder,'/',sname,'_Segments.txt'))
-check_input_files<-function(Sample_Name,folder,std_file="standard_format"){
 
-  file_list<-list.files(folder,full.names = T)
-  path<-sapply(Sample_Name,function(ID){
-    match=FALSE
-    match<-sapply(file_list, function(file) ifelse(data.table::like(basename(file),ID),TRUE,FALSE))
-    if(sum(match) == 0) warning("No input file found for sample: ",ID)
-    if(sum(match) > 1){
-      #std_file <- paste0(conumee.folder,"/",.folder,"/",ID,"_Segments.txt")
-      match_files <- file_list[match]
-      std_file<-eval(std_file)
-      if(std_file %in% match_files){
-        ok <- match_files[which(std_file %in% match_files)]}else{
-        ok <- file_list[which.max(match)]}
-      overwrite<-setdiff(match_files,ok)
-      warning("multiple files match ",ID, ". \n ", paste(overwrite,collapse = ", ")," ignored.")
-      return(ok)
-    }# otherwise match == 1
-    match_files <- file_list[match]
-    return(match_files)
-  })
-  return(path)
-}
+#rlang::expr(paste0(conumee.folder,'/',seg.folder,'/',sname,'_Segments.txt'))
+
 # a<-"paste0(conumee.folder,'/',seg.folder,'/',sname,'_Segments.txt')"
 # test<-function(folder="myfolder/",std_file){
 #   std_file<-unquote(std_file);print(std_file)
