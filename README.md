@@ -14,13 +14,14 @@ primary”](https://academic.oup.com/bib/advance-article/doi/10.1093/bib/bbac161
 
 # cnv.methyl Package:
 
-An R package has been created in order to collect and share all the
-functions and code used for the pipline. You can install the development
-version from [GitHub](https://github.com/) with:
+[cnv.methyl package](https://github.com/ijcBIT/cnv.methyl.git) has been
+created in order to collect and share all the functions and code used
+for the pipline. It is written fully in R and you can install the
+development version from [GitHub](https://github.com/) with:
 
 ``` r
 # install.packages("devtools")
-devtools::install_github("git@github.com:ijcBIT/cnv.methyl.git")
+devtools::install_github("https://github.com/ijcBIT/cnv.methyl.git")
 ```
 
 ## Examples:
